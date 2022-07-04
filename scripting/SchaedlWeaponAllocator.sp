@@ -210,14 +210,6 @@ public void OnClientCookiesCached(int client)
 	GetClientCookie(client, CTAwpChanceCookie, ctAwpChance, sizeof(ctAwpChance));
 	GetClientCookie(client, TAwpChanceCookie, tAwpChance, sizeof(tAwpChance));
 
-	PrintToServer("WEAPON INFO COOKIES:");
-	PrintToServer("[%d] CT-Rifle: %s", client, ctRifle);
-	PrintToServer("[%d] T-Rifle: %s", client, tRifle);
-	PrintToServer("[%d] CT-Pistol: %s", client, ctPistol);
-	PrintToServer("[%d] T-Pistol: %s", client, tPistol);
-	PrintToServer("[%d] CT-AWP-Chance: %s%", client, ctAwpChance);
-	PrintToServer("[%d] T-AWP-Chance: %s%", client, tAwpChance);
-
 	if(strlen(ctRifle) > 0)
 	{
 		CTRifle[client] = ctRifle;
@@ -236,14 +228,6 @@ public void OnClientCookiesCached(int client)
 	}
 	CTAwpChance[client] = StringToInt(ctAwpChance);
 	TAwpChance[client] = StringToInt(tAwpChance);
-
-	PrintToServer("WEAPON INFO:");
-	PrintToServer("[%d] CT-Rifle: %s", client, CTRifle[client]);
-	PrintToServer("[%d] T-Rifle: %s", client, TRifle[client]);
-	PrintToServer("[%d] CT-Pistol: %s", client, CTPistol[client]);
-	PrintToServer("[%d] T-Pistol: %s", client, TPistol[client]);
-	PrintToServer("[%d] CT-AWP-Chance: %d%", client, CTAwpChance[client]);
-	PrintToServer("[%d] T-AWP-Chance: %d%", client, TAwpChance[client]);
 }
 
 public void Retakes_OnGunsCommand(int client)
@@ -599,4 +583,3 @@ public void GivePlayerDefuseKit(int client)
 {
 	SetEntProp(client, Prop_Send, "m_bHasDefuser", 1);
 }
-
