@@ -1,6 +1,7 @@
 #include <sourcemod>
 #include <cstrike>
 #include <clientprefs>
+#include <sdktools_functions>
 
 #include <retakes.inc>
 
@@ -535,12 +536,6 @@ public void WeaponAllocator(ArrayList tPlayers, ArrayList ctPlayers, Bombsite bo
     int tCount = tPlayers.Length;
     int ctCount = ctPlayers.Length;
 
-    char primary[WEAPON_STRING_LENGTH];
-    char secondary[WEAPON_STRING_LENGTH];
-    char nades[NADE_STRING_LENGTH];
-    bool helmet = true;
-    bool kit = true;
-
 	RandomizeArrayList(tPlayers);
 	RandomizeArrayList(ctPlayers);
 
@@ -553,20 +548,16 @@ public void WeaponAllocator(ArrayList tPlayers, ArrayList ctPlayers, Bombsite bo
 		int awpChance = TAwpChance[client];
 		if(!isAWPGivenToT && awpChance > 0 && GetRandomInt(0, 100) <= awpChance)
 		{
-			primary = "weapon_awp";
+			GivePlayerItem(client, "weapon_awp");
 			isAWPGivenToT = true;
 		}
         else {
-            primary = TRifle[client];
+            GivePlayerItem(client, TRifle[client]);
         } 
 
-        secondary = TPistol[client];
+        GivePlayerItem(client, TPistol[client]);
 
-        helmet = true;
-        kit = false;
-        //SetNades(nades);
-
-        Retakes_SetPlayerInfo(client, primary, secondary, nades, 100, 100, helmet, kit);
+        GivePlayerArmor(client, 100, true);
     }
 
     for (int i = 0; i < ctCount; i++) {
@@ -575,20 +566,17 @@ public void WeaponAllocator(ArrayList tPlayers, ArrayList ctPlayers, Bombsite bo
 		int awpChance = CTAwpChance[client];
 		if(!isAWPGivenToCT && awpChance > 0 && GetRandomInt(0, 100) <= awpChance)
 		{
-			primary = "weapon_awp";
+			GivePlayerItem(client, "weapon_awp");
 			isAWPGivenToCT = true;
 		}
         else {
-            primary = CTRifle[client];
+            GivePlayerItem(client, CTRifle[client]);
         } 
 
-        secondary = CTPistol[client];
+       	GivePlayerItem(client, CTPistol[client]);
 
-        kit = true;
-        helmet = true;
-        //SetNades(nades);
-
-        Retakes_SetPlayerInfo(client, primary, secondary, nades, 100, 100, helmet, kit);
+		GivePlayerArmor(client, 100, true);
+		GivePlayerDefuseKit(client);
     }
 }
 
@@ -600,3 +588,15 @@ public void RandomizeArrayList(ArrayList arrayList)
 	}
 	
 }
+
+public void GivePlayerArmor(int client, int armorAmount, bool helmet)
+{
+	SetEntProp(client, Prop_Send, "m_ArmorValue", armorAmount);
+	SetEntProp(client, Prop_Send, "m_bHasHelmet", helmet);
+}
+
+public void GivePlayerDefuseKit(int client)
+{
+	SetEntProp(client, Prop_Send, "m_bHasDefuser", 1);
+}
+
