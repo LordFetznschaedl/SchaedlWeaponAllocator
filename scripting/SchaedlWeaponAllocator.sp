@@ -10,6 +10,8 @@
 
 #define MENU_TIME_LENGTH 15
 
+bool IsLateLoad = false;
+
 Handle CTRifleCookie;
 Handle CTPistolCookie;
 char CTRifle[MAXPLAYERS+1][WEAPON_STRING_LENGTH];
@@ -47,6 +49,10 @@ char AvailableCTNades[100][NADE_STRING_LENGTH];
 char AvailableTNades[100][NADE_STRING_LENGTH];
 
 ConVar gcv_NadeMode;
+
+ConVar gcv_CTMaxAWPChance;
+ConVar gcv_TMaxAWPChance;
+
 ConVar gcv_CTIncGrenadeChance;
 ConVar gcv_TMolotovChance;
 ConVar gcv_CTHEGrenadeChance;
@@ -67,6 +73,12 @@ public Plugin myinfo =
 	url = "https://github.com/LordFetznschaedl/SchaedlWeaponAllocator"
 };
 
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err)
+{
+	IsLateLoad = late;
+	return APLRes_Success;
+}
+
 public void OnPluginStart()
 {	
 	RegisterClientCookies();
@@ -74,6 +86,11 @@ public void OnPluginStart()
 
 	ParseWeapons();
 	ParseNades();
+
+	if(IsLateLoad)
+	{
+		LateLoad();
+	}
 
 	RegConsoleCmd("sm_weaponinfo", WeaponInfo, "Prints to chat the selected weapons.");
 	RegConsoleCmd("sm_weaponinfocookies", WeaponInfoCookies, "Prints to chat the selected weapons saved in the cookies.");
@@ -87,7 +104,10 @@ public void CreateConVars()
 	AutoExecConfig_SetFile("SchaedlWeaponAllocator", "sourcemod");
 	AutoExecConfig_SetCreateFile(true);
 
-	gcv_NadeMode = AutoExecConfig_CreateConVar("sm_swa_nade_mode", "0", "How Nades are given out. 0 - NoNades, 1 - RandomChanceNades, 2 - NadePresetConfig", _, true, 0.0, true, 2.0);
+	gcv_NadeMode = AutoExecConfig_CreateConVar("sm_swa_nade_mode", "2", "How Nades are given out. 0 - NoNades, 1 - RandomChanceNades, 2 - NadePresetConfig", _, true, 0.0, true, 2.0);
+
+	gcv_CTMaxAWPChance = AutoExecConfig_CreateConVar("sm_swa_max_awp_chance", "50", "Max Chance available to get an awp as a CT. AWP Chance is available as 0%, 25%, 50%, 75%, 100%", _, true, 0.0, true, 100.0);
+	gcv_TMaxAWPChance = AutoExecConfig_CreateConVar("sm_swa_max_awp_chance", "50", "Max Chance available to get an awp as a T. AWP Chance is available as 0%, 25%, 50%, 75%, 100%", _, true, 0.0, true, 100.0);
 
 	gcv_CTIncGrenadeChance = AutoExecConfig_CreateConVar("sm_swa_ct_inc_grenade_chance", "50", "Percent Chance to get a Inc-Grenade as a CT", _, true, 0.0, true, 100.0);
 	gcv_TMolotovChance = AutoExecConfig_CreateConVar("sm_swa_t_molotov_chance", "50", "Percent Chance to get a Molotov as a T", _, true, 0.0, true, 100.0);
@@ -102,6 +122,24 @@ public void CreateConVars()
 
 	AutoExecConfig_ExecuteFile();
 	AutoExecConfig_CleanFile();
+}
+
+public void LateLoad()
+{
+	for (int i = 1; i <= MaxClients; i++)
+		{
+			if (!IsClientInGame(i))
+				continue;
+
+			OnClientConnected(i);
+
+			if (!AreClientCookiesCached(i))
+				continue;
+
+			OnClientCookiesCached(i);
+		}
+
+		IsLateLoad = false;
 }
 
 public void ParseWeapons()
@@ -322,8 +360,29 @@ public void OnClientCookiesCached(int client)
 	{
 		TPistol[client] = tPistol;
 	}
-	CTAwpChance[client] = StringToInt(ctAwpChance);
-	TAwpChance[client] = StringToInt(tAwpChance);
+
+	int ctAwpChanceInt = StringToInt(ctAwpChance);
+	int tAwpChanceInt = StringToInt(tAwpChance);
+
+	if(ctAwpChanceInt > gcv_CTMaxAWPChance.IntValue)
+	{
+		ctAwpChanceInt = 25;
+		ctAwpChance = "25";
+
+		CTAwpChance[client] = ctAwpChanceInt;
+		SetClientCookie(client, CTAwpChanceCookie, ctAwpChance);
+	}
+	if(tAwpChanceInt > gcv_TMaxAWPChance.IntValue)
+	{
+		ctAwpChanceInt = 25;
+		ctAwpChance = "25";
+
+		TAwpChance[client] = tAwpChanceInt;
+		SetClientCookie(client, TAwpChanceCookie, tAwpChance);
+	}
+
+	CTAwpChance[client] = ctAwpChanceInt;
+	TAwpChance[client] = tAwpChanceInt;
 }
 
 public void Retakes_OnGunsCommand(int client)
@@ -535,11 +594,11 @@ public void CTAwpChanceWeaponMenu(int client)
 {
 	Menu menu = new Menu(CTAWPChanceMenuHandler);
 	menu.SetTitle("CT AWP Chance Menu:");
-	menu.AddItem("0", "0%");
-	menu.AddItem("25", "25%");
-	menu.AddItem("50", "50%");
-	menu.AddItem("75", "75%");
-	menu.AddItem("100", "100%");
+	menu.AddItem("0", "0%", 0 <= gcv_CTMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("25", "25%", 25 <= gcv_CTMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("50", "50%", 50 <= gcv_CTMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("75", "75%", 75 <= gcv_CTMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("100", "100%", 100 <= gcv_CTMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
 	menu.Display(client, MENU_TIME_LENGTH);
 }
 
@@ -631,11 +690,11 @@ public void TAwpChanceWeaponMenu(int client)
 {
 	Menu menu = new Menu(TAWPChanceMenuHandler);
 	menu.SetTitle("T AWP Chance Menu:");
-	menu.AddItem("0", "0%");
-	menu.AddItem("25", "25%");
-	menu.AddItem("50", "50%");
-	menu.AddItem("75", "75%");
-	menu.AddItem("100", "100%");
+	menu.AddItem("0", "0%", 0 <= gcv_TMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("25", "25%", 25 <= gcv_TMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("50", "50%", 50 <= gcv_TMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("75", "75%", 75 <= gcv_TMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("100", "100%", 100 <= gcv_TMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
 	menu.Display(client, MENU_TIME_LENGTH);
 }
 
