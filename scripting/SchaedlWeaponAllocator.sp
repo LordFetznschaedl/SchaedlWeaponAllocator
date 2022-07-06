@@ -1,9 +1,8 @@
 #include <sourcemod>
 #include <cstrike>
 #include <clientprefs>
-#include <sdktools_functions>
-
 #include <retakes.inc>
+#include <autoexecconfig>
 
 #pragma newdecls required
 #pragma semicolon 1
@@ -42,6 +41,23 @@ int TPistolCount = 0;
 char AvailableTPistolsNames[100][WEAPON_STRING_LENGTH];
 char AvailableTPistolsEntity[100][WEAPON_STRING_LENGTH];
 
+int CTNadesCount = 0;
+int TNadesCount = 0;
+char AvailableCTNades[100][NADE_STRING_LENGTH];
+char AvailableTNades[100][NADE_STRING_LENGTH];
+
+ConVar gcv_NadeMode;
+ConVar gcv_CTIncGrenadeChance;
+ConVar gcv_TMolotovChance;
+ConVar gcv_CTHEGrenadeChance;
+ConVar gcv_THEGrenadeChance;
+ConVar gcv_CTSmokeGrenadeChance;
+ConVar gcv_TSmokeGrenadeChance;
+ConVar gcv_CTFlashbangChance;
+ConVar gcv_TFlashbangChance;
+ConVar gcv_CTDecoyChance;
+ConVar gcv_TDecoyChance;
+
 public Plugin myinfo =
 {
 	name = "SchaedlWeaponAllocator",
@@ -51,15 +67,41 @@ public Plugin myinfo =
 	url = "https://github.com/LordFetznschaedl/SchaedlWeaponAllocator"
 };
 
-
 public void OnPluginStart()
 {	
 	RegisterClientCookies();
+	CreateConVars();
 
 	ParseWeapons();
+	ParseNades();
 
 	RegConsoleCmd("sm_weaponinfo", WeaponInfo, "Prints to chat the selected weapons.");
 	RegConsoleCmd("sm_weaponinfocookies", WeaponInfoCookies, "Prints to chat the selected weapons saved in the cookies.");
+
+	RegConsoleCmd("sm_availableweapons", AvailableWeapons, "Prints to chat all available weapons.");
+	RegConsoleCmd("sm_availablenades", AvailableNades, "Prints to chat all available nades.");
+}
+
+public void CreateConVars()
+{
+	AutoExecConfig_SetFile("SchaedlWeaponAllocator", "sourcemod");
+	AutoExecConfig_SetCreateFile(true);
+
+	gcv_NadeMode = AutoExecConfig_CreateConVar("sm_swa_nade_mode", "0", "How Nades are given out. 0 - NoNades, 1 - RandomChanceNades, 2 - NadePresetConfig", _, true, 0.0, true, 2.0);
+
+	gcv_CTIncGrenadeChance = AutoExecConfig_CreateConVar("sm_swa_ct_inc_grenade_chance", "50", "Percent Chance to get a Inc-Grenade as a CT", _, true, 0.0, true, 100.0);
+	gcv_TMolotovChance = AutoExecConfig_CreateConVar("sm_swa_t_molotov_chance", "50", "Percent Chance to get a Molotov as a T", _, true, 0.0, true, 100.0);
+	gcv_CTHEGrenadeChance = AutoExecConfig_CreateConVar("sm_swa_ct_he_grenade_chance", "50", "Percent Chance to get a HE-Grenade as a CT", _, true, 0.0, true, 100.0);
+	gcv_THEGrenadeChance = AutoExecConfig_CreateConVar("sm_swa_t_he_grenade_chance", "50", "Percent Chance to get a HE-Grenade as a T", _, true, 0.0, true, 100.0);
+	gcv_CTSmokeGrenadeChance = AutoExecConfig_CreateConVar("sm_swa_ct_smoke_grenade_chance", "50", "Percent Chance to get a Smoke-Grenade as a CT", _, true, 0.0, true, 100.0);
+	gcv_TSmokeGrenadeChance = AutoExecConfig_CreateConVar("sm_swa_t_smoke_grenade_chance", "50", "Percent Chance to get a Smoke-Grenade as a T", _, true, 0.0, true, 100.0);
+	gcv_CTFlashbangChance = AutoExecConfig_CreateConVar("sm_swa_ct_flashbang_chance", "50", "Percent Chance to get a Flashbang as a CT", _, true, 0.0, true, 100.0);
+	gcv_TFlashbangChance = AutoExecConfig_CreateConVar("sm_swa_t_flashbang_chance", "50", "Percent Chance to get a Flashbang as a T", _, true, 0.0, true, 100.0);
+	gcv_CTDecoyChance = AutoExecConfig_CreateConVar("sm_swa_ct_decoy_chance", "0", "Percent Chance to get a Decoy as a CT", _, true, 0.0, true, 100.0);
+	gcv_TDecoyChance = AutoExecConfig_CreateConVar("sm_swa_t_decoy_chance", "0", "Percent Chance to get a Decoy as a T", _, true, 0.0, true, 100.0);
+
+	AutoExecConfig_ExecuteFile();
+	AutoExecConfig_CleanFile();
 }
 
 public void ParseWeapons()
@@ -179,6 +221,60 @@ public void ParseWeapons()
 	while(weaponsKeyValues.GotoNextKey());
 }
 
+public void ParseNades()
+{
+	char path[PLATFORM_MAX_PATH];
+	BuildPath(Path_SM, path, sizeof(path), "configs/SchaedlWeaponAllocator_Nades.cfg");
+
+	if(!FileExists(path))
+	{
+		SetFailState("Config file %s was not found!", path);
+		return;
+	}
+
+	KeyValues nadesKeyValues = new KeyValues("Nades");
+	if(!nadesKeyValues.ImportFromFile(path))
+	{
+		SetFailState("Unable to parse the KeyValue file %s!", path);
+		return;
+	}
+
+	if(!nadesKeyValues.GotoFirstSubKey())
+	{
+		SetFailState("Unable to find Nades section in the KeyValue file %s!", path);
+		return;
+	}
+	
+	do
+	{
+		char nades[NADE_STRING_LENGTH];
+		char team[8];
+
+		nadesKeyValues.GetString("nades", nades, sizeof(nades));
+		nadesKeyValues.GetString("team", team, sizeof(team));
+
+		if(strcmp("ct", team, false) == 0)
+		{
+			AvailableCTNades[CTNadesCount] = nades;
+			CTNadesCount++;
+		}
+		else if (strcmp("t", team, false) == 0)
+		{
+			AvailableTNades[TNadesCount] = nades;
+			TNadesCount++;
+		}
+		else if (strcmp("any", team, false) == 0)
+		{
+			AvailableCTNades[CTNadesCount] = nades;
+			CTNadesCount++;
+
+			AvailableTNades[TNadesCount] = nades;
+			TNadesCount++;
+		}
+	}
+	while(nadesKeyValues.GotoNextKey());
+}
+
 public void OnClientConnected(int client)
 {
 	CTRifle[client] = "weapon_m4a1";
@@ -249,6 +345,7 @@ public void RegisterClientCookies()
 
 public Action WeaponInfo(int client, int args)
 {
+	ReplyToCommand(client, "--------------------------------------------------------");
 	ReplyToCommand(client, "WEAPON INFO:");
 	ReplyToCommand(client, "CT-Rifle: %s", CTRifle[client]);
 	ReplyToCommand(client, "T-Rifle: %s", TRifle[client]);
@@ -256,6 +353,7 @@ public Action WeaponInfo(int client, int args)
 	ReplyToCommand(client, "T-Pistol: %s", TPistol[client]);
 	ReplyToCommand(client, "CT-AWP-Chance: %d%", CTAwpChance[client]);
 	ReplyToCommand(client, "T-AWP-Chance: %d%", TAwpChance[client]);
+	ReplyToCommand(client, "--------------------------------------------------------");
 }
 
 public Action WeaponInfoCookies(int client, int args)
@@ -274,6 +372,7 @@ public Action WeaponInfoCookies(int client, int args)
 	GetClientCookie(client, CTAwpChanceCookie, ctAwpChance, sizeof(ctAwpChance));
 	GetClientCookie(client, TAwpChanceCookie, tAwpChance, sizeof(tAwpChance));
 
+	ReplyToCommand(client, "--------------------------------------------------------");
 	ReplyToCommand(client, "WEAPON INFO COOKIES:");
 	ReplyToCommand(client, "CT-Rifle: %s", ctRifle);
 	ReplyToCommand(client, "T-Rifle: %s", tRifle);
@@ -281,6 +380,54 @@ public Action WeaponInfoCookies(int client, int args)
 	ReplyToCommand(client, "T-Pistol: %s", tPistol);
 	ReplyToCommand(client, "CT-AWP-Chance: %s%", ctAwpChance);
 	ReplyToCommand(client, "T-AWP-Chance: %s%", tAwpChance);
+	ReplyToCommand(client, "--------------------------------------------------------");
+}
+
+public Action AvailableWeapons(int client, int args)
+{
+	ReplyToCommand(client, "--------------------------------------------------------");
+	ReplyToCommand(client, "Rifles CT:");
+	for(int i = 0; i < CTRifleCount; i++)
+	{
+		ReplyToCommand(client, "%s - %s", AvailableCTRiflesNames[i], AvailableCTRiflesEntity[i]);
+	}
+	ReplyToCommand(client, "--------------------------------------------------------");
+	ReplyToCommand(client, "Pistols CT:");
+	for(int i = 0; i < CTPistolCount; i++)
+	{
+		ReplyToCommand(client, "%s - %s", AvailableCTPistolsNames[i], AvailableCTPistolsEntity[i]);
+	}
+	ReplyToCommand(client, "--------------------------------------------------------");
+	ReplyToCommand(client, "Rifles T:");
+	for(int i = 0; i < TRifleCount; i++)
+	{
+		ReplyToCommand(client, "%s - %s", AvailableTRiflesNames[i], AvailableTRiflesEntity[i]);
+	}
+	ReplyToCommand(client, "--------------------------------------------------------");
+	ReplyToCommand(client, "Pistols T:");
+	for(int i = 0; i < TPistolCount; i++)
+	{
+		ReplyToCommand(client, "%s - %s", AvailableTPistolsNames[i], AvailableTPistolsEntity[i]);
+	}
+	ReplyToCommand(client, "--------------------------------------------------------");
+
+} 
+
+public Action AvailableNades(int client, int args)
+{
+	ReplyToCommand(client, "--------------------------------------------------------");
+	ReplyToCommand(client, "Nades CT:");
+	for(int i = 0; i < CTNadesCount; i++)
+	{
+		ReplyToCommand(client, "%s", AvailableCTNades[i]);
+	}
+	ReplyToCommand(client, "--------------------------------------------------------");
+	ReplyToCommand(client, "Nades T:");
+	for(int i = 0; i < TNadesCount; i++)
+	{
+		ReplyToCommand(client, "%s", AvailableTNades[i]);
+	}
+	ReplyToCommand(client, "--------------------------------------------------------");
 }
 
 public void MainMenu(int client)
@@ -520,6 +667,14 @@ public void WeaponAllocator(ArrayList tPlayers, ArrayList ctPlayers, Bombsite bo
     int tCount = tPlayers.Length;
     int ctCount = ctPlayers.Length;
 
+	char primary[WEAPON_STRING_LENGTH];
+    char secondary[WEAPON_STRING_LENGTH];
+    
+    bool helmet = true;
+    bool kit = true;
+	int healthAmount;
+	int armorAmount;
+	
 	RandomizeArrayList(tPlayers);
 	RandomizeArrayList(ctPlayers);
 
@@ -528,39 +683,52 @@ public void WeaponAllocator(ArrayList tPlayers, ArrayList ctPlayers, Bombsite bo
 
     for (int i = 0; i < tCount; i++) {
         int client = tPlayers.Get(i);
+		char nades[NADE_STRING_LENGTH];
 
 		int awpChance = TAwpChance[client];
 		if(!isAWPGivenToT && awpChance > 0 && GetRandomInt(0, 100) <= awpChance)
 		{
-			GivePlayerItem(client, "weapon_awp");
+			primary = "weapon_awp";
 			isAWPGivenToT = true;
 		}
         else {
-            GivePlayerItem(client, TRifle[client]);
+            primary = TRifle[client];
         } 
 
-        GivePlayerItem(client, TPistol[client]);
+        secondary = TPistol[client];
 
-        GivePlayerArmor(client, 100, true);
+        helmet = true;
+        kit = false;
+		healthAmount = 100;
+		armorAmount = 100;
+
+        SetNades(false, nades);
+        Retakes_SetPlayerInfo(client, primary, secondary, nades, healthAmount, armorAmount, helmet, kit);
     }
 
     for (int i = 0; i < ctCount; i++) {
         int client = ctPlayers.Get(i);
+		char nades[NADE_STRING_LENGTH];
 
 		int awpChance = CTAwpChance[client];
 		if(!isAWPGivenToCT && awpChance > 0 && GetRandomInt(0, 100) <= awpChance)
 		{
-			GivePlayerItem(client, "weapon_awp");
+			primary = "weapon_awp";
 			isAWPGivenToCT = true;
 		}
         else {
-            GivePlayerItem(client, CTRifle[client]);
+            primary = CTRifle[client];
         } 
 
-       	GivePlayerItem(client, CTPistol[client]);
+        secondary = CTPistol[client];
 
-		GivePlayerArmor(client, 100, true);
-		GivePlayerDefuseKit(client);
+        kit = true;
+        helmet = true;
+		healthAmount = 100;
+		armorAmount = 100;
+
+        SetNades(true, nades);
+        Retakes_SetPlayerInfo(client, primary, secondary, nades, healthAmount, armorAmount, helmet, kit);
     }
 }
 
@@ -573,13 +741,93 @@ public void RandomizeArrayList(ArrayList arrayList)
 	
 }
 
-public void GivePlayerArmor(int client, int armorAmount, bool helmet)
+public void SetNades(bool isClientCT, char nades[NADE_STRING_LENGTH])
 {
-	SetEntProp(client, Prop_Send, "m_ArmorValue", armorAmount);
-	SetEntProp(client, Prop_Send, "m_bHasHelmet", helmet);
+	switch(gcv_NadeMode.IntValue)
+	{
+		case 0:
+		{
+			return;
+		}
+		case 1:
+		{
+			SetRandomizedNades(isClientCT, nades);
+			return;
+		}
+		case 2:
+		{
+			SetNadePresets(isClientCT, nades);
+			return;
+		}
+	}
 }
 
-public void GivePlayerDefuseKit(int client)
+public void SetRandomizedNades(bool isClientCT, char nades[NADE_STRING_LENGTH]) 
 {
-	SetEntProp(client, Prop_Send, "m_bHasDefuser", 1);
+	char molotov = 'm';
+	char incGrenade = 'i';
+	char heGrenade = 'h';
+	char flashbang = 'f';
+	char smokeGrenade = 's';
+	char decoy = 'd';
+ 
+	if(isClientCT)
+	{
+		if(GetRandomInt(0, 100) <= gcv_CTIncGrenadeChance.IntValue)
+		{
+			nades[0] = incGrenade;
+		}
+		if(GetRandomInt(0, 100) <= gcv_CTSmokeGrenadeChance.IntValue)
+		{
+			nades[1] = smokeGrenade;
+		}
+		if(GetRandomInt(0, 100) <= gcv_CTHEGrenadeChance.IntValue)
+		{
+			nades[2] = heGrenade;
+		}
+		if(GetRandomInt(0, 100) <= gcv_CTFlashbangChance.IntValue)
+		{
+			nades[3] = flashbang;
+		}
+		if(GetRandomInt(0, 100) <= gcv_CTDecoyChance.IntValue)
+		{
+			nades[4] = decoy;
+		}
+
+	}
+	else if(!isClientCT)
+	{
+		if(GetRandomInt(0, 100) <= gcv_TMolotovChance.IntValue)
+		{
+			nades[0] = molotov;
+		}
+		if(GetRandomInt(0, 100) <= gcv_TSmokeGrenadeChance.IntValue)
+		{
+			nades[1] = smokeGrenade;
+		}
+		if(GetRandomInt(0, 100) <= gcv_THEGrenadeChance.IntValue)
+		{
+			nades[2] = heGrenade;
+		}
+		if(GetRandomInt(0, 100) <= gcv_TFlashbangChance.IntValue)
+		{
+			nades[3] = flashbang;
+		}
+		if(GetRandomInt(0, 100) <= gcv_TDecoyChance.IntValue)
+		{
+			nades[4] = decoy;
+		}
+	}
+}
+
+public void SetNadePresets(bool isClientCT, char nades[NADE_STRING_LENGTH])
+{
+	if(isClientCT)
+	{
+		nades = AvailableCTNades[GetRandomInt(0, CTNadesCount)];
+	}
+	else if(!isClientCT)
+	{
+		nades = AvailableTNades[GetRandomInt(0, TNadesCount)];
+	}
 }
