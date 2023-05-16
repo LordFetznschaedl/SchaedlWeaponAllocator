@@ -3,12 +3,20 @@
 #include <clientprefs>
 #include <retakes.inc>
 #include <autoexecconfig>
+#include <clients>
+#include <sdktools_functions>
+#include <sdkhooks>
 
 #pragma newdecls required
 #pragma semicolon 1
 #pragma tabsize 0
 
 #define MENU_TIME_LENGTH 15
+#define DEFAULT_CT_RIFLE "weapon_m4a1"
+#define DEFAULT_T_RIFLE "weapon_ak47"
+#define DEFAULT_CT_PISTOL "weapon_hkp2000"
+#define DEFAULT_T_PISTOL "weapon_glock"
+
 
 bool IsLateLoad = false;
 
@@ -92,11 +100,19 @@ public void OnPluginStart()
 		LateLoad();
 	}
 
-	RegConsoleCmd("sm_weaponinfo", WeaponInfo, "Prints to chat the selected weapons.");
-	RegConsoleCmd("sm_weaponinfocookies", WeaponInfoCookies, "Prints to chat the selected weapons saved in the cookies.");
+	HookEvent("weapon_fire", Event_WeaponFire);
 
-	RegConsoleCmd("sm_availableweapons", AvailableWeapons, "Prints to chat all available weapons.");
-	RegConsoleCmd("sm_availablenades", AvailableNades, "Prints to chat all available nades.");
+	RegAdminCmd("sm_weaponinfo", WeaponInfo, 98, "Prints to chat the selected weapons.");
+	RegAdminCmd("sm_weaponinfocookies", WeaponInfoCookies, 98,  "Prints to chat the selected weapons saved in the cookies.");
+
+	RegAdminCmd("sm_availableweapons", AvailableWeapons, 98,  "Prints to chat all available weapons.");
+	RegAdminCmd("sm_availablenades", AvailableNades, 98,  "Prints to chat all available nades.");
+
+	RegAdminCmd("sm_clientinfo", ClientInfo, ADMFLAG_ROOT, "Prints to chat the clientId and Name.");
+	RegAdminCmd("sm_resetweaponsofclienttodefault", ResetWeaponsOfClientToDefault, ADMFLAG_ROOT, "Resets the clients weapons to default");
+
+	RegAdminCmd("sm_setrifle", SetRifle, ADMFLAG_ROOT, "Sets a specific rifle defined in the parameters");
+	RegAdminCmd("sm_funmode", FunMode, ADMFLAG_ROOT, "Sets a fun mode");
 }
 
 public void CreateConVars()
@@ -106,8 +122,8 @@ public void CreateConVars()
 
 	gcv_NadeMode = AutoExecConfig_CreateConVar("sm_swa_nade_mode", "2", "How Nades are given out. 0 - NoNades, 1 - RandomChanceNades, 2 - NadePresetConfig", _, true, 0.0, true, 2.0);
 
-	gcv_CTMaxAWPChance = AutoExecConfig_CreateConVar("sm_swa_max_awp_chance", "50", "Max Chance available to get an awp as a CT. AWP Chance is available as 0%, 25%, 50%, 75%, 100%", _, true, 0.0, true, 100.0);
-	gcv_TMaxAWPChance = AutoExecConfig_CreateConVar("sm_swa_max_awp_chance", "50", "Max Chance available to get an awp as a T. AWP Chance is available as 0%, 25%, 50%, 75%, 100%", _, true, 0.0, true, 100.0);
+	gcv_CTMaxAWPChance = AutoExecConfig_CreateConVar("sm_swa_max_ct_awp_chance", "25", "Max Chance available to get an awp as a CT. AWP Chance is available as 0%, 25%, 50%, 75%, 100%", _, true, 0.0, true, 100.0);
+	gcv_TMaxAWPChance = AutoExecConfig_CreateConVar("sm_swa_max_t_awp_chance", "25", "Max Chance available to get an awp as a T. AWP Chance is available as 0%, 25%, 50%, 75%, 100%", _, true, 0.0, true, 100.0);
 
 	gcv_CTIncGrenadeChance = AutoExecConfig_CreateConVar("sm_swa_ct_inc_grenade_chance", "50", "Percent Chance to get a Inc-Grenade as a CT", _, true, 0.0, true, 100.0);
 	gcv_TMolotovChance = AutoExecConfig_CreateConVar("sm_swa_t_molotov_chance", "50", "Percent Chance to get a Molotov as a T", _, true, 0.0, true, 100.0);
@@ -129,13 +145,17 @@ public void LateLoad()
 	for (int i = 1; i <= MaxClients; i++)
 		{
 			if (!IsClientInGame(i))
+			{
 				continue;
+			}
 
 			OnClientConnected(i);
 
 			if (!AreClientCookiesCached(i))
+			{
 				continue;
-
+			}
+			
 			OnClientCookiesCached(i);
 		}
 
@@ -313,14 +333,59 @@ public void ParseNades()
 	while(nadesKeyValues.GotoNextKey());
 }
 
-public void OnClientConnected(int client)
+public bool IsClientAdmin(int client)
 {
-	CTRifle[client] = "weapon_m4a1";
-	TRifle[client] = "weapon_ak47";
-	CTPistol[client] = "weapon_hkp2000";
-	TPistol[client] = "weapon_glock";
+	if(GetUserAdmin(client) != INVALID_ADMIN_ID)
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+public bool IsClientRoot(int client)
+{
+	if (GetUserFlagBits(client) & ADMFLAG_ROOT == ADMFLAG_ROOT)
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+public void SetDefaultWeapons(int client)
+{
+	CTRifle[client] = DEFAULT_CT_RIFLE;
+	TRifle[client] = DEFAULT_T_RIFLE;
+	CTPistol[client] = DEFAULT_CT_PISTOL;
+	TPistol[client] = DEFAULT_T_PISTOL;
 	CTAwpChance[client] = 0;
 	TAwpChance[client] = 0;
+}
+
+public void SetWeaponsCookies(int client)
+{
+	SetClientCookie(client, CTRifleCookie, CTRifle[client]);
+	SetClientCookie(client, TRifleCookie, TRifle[client]);
+	SetClientCookie(client, CTPistolCookie, CTPistol[client]);
+	SetClientCookie(client, TPistolCookie, TPistol[client]);
+
+	char chance[32];
+
+	IntToString(CTAwpChance[client], chance, sizeof(chance));
+	SetClientCookie(client, CTAwpChanceCookie, chance);
+
+	IntToString(TAwpChance[client], chance, sizeof(chance));
+	SetClientCookie(client, TAwpChanceCookie, chance);
+}
+
+public void OnClientConnected(int client)
+{
+	SetDefaultWeapons(client);
 }
 
 public void OnClientCookiesCached(int client) 
@@ -364,18 +429,18 @@ public void OnClientCookiesCached(int client)
 	int ctAwpChanceInt = StringToInt(ctAwpChance);
 	int tAwpChanceInt = StringToInt(tAwpChance);
 
-	if(ctAwpChanceInt > gcv_CTMaxAWPChance.IntValue)
+	if(ctAwpChanceInt > gcv_CTMaxAWPChance.IntValue && !IsClientRoot(client))
 	{
-		ctAwpChanceInt = 25;
-		ctAwpChance = "25";
+		ctAwpChanceInt = 0;
+		ctAwpChance = "0";
 
 		CTAwpChance[client] = ctAwpChanceInt;
 		SetClientCookie(client, CTAwpChanceCookie, ctAwpChance);
 	}
-	if(tAwpChanceInt > gcv_TMaxAWPChance.IntValue)
+	if(tAwpChanceInt > gcv_TMaxAWPChance.IntValue && !IsClientRoot(client))
 	{
-		ctAwpChanceInt = 25;
-		ctAwpChance = "25";
+		tAwpChanceInt = 0;
+		tAwpChance = "0";
 
 		TAwpChance[client] = tAwpChanceInt;
 		SetClientCookie(client, TAwpChanceCookie, tAwpChance);
@@ -402,21 +467,158 @@ public void RegisterClientCookies()
 	TAwpChanceCookie = RegClientCookie("SWA_awp_chance_t", "", CookieAccess_Private);
 }
 
-public Action WeaponInfo(int client, int args)
+public Action ClientInfo(int client, int args)
 {
 	ReplyToCommand(client, "--------------------------------------------------------");
+	for (int i = 1; i <= MaxClients; i++)
+	{
+		if (!IsClientInGame(i))
+		{
+			continue;
+		}
+
+		char clientName[MAX_NAME_LENGTH];
+		GetClientName(i, clientName, sizeof(clientName));
+
+		char clientSteamAuth[64];
+		GetClientAuthId(i, AuthId_Engine, clientSteamAuth, sizeof(clientSteamAuth));
+
+		ReplyToCommand(client, "%d - %s - %s", i, clientName, clientSteamAuth);
+	}
+	ReplyToCommand(client, "--------------------------------------------------------");
+}
+
+public Action ResetWeaponsOfClientToDefault(int client, int args)
+{
+	if(args != 1)
+	{
+		ReplyToCommand(client, "Usage: sm_resetweaponsofclienttodefault <clientID>");
+		return Plugin_Handled;
+	}
+
+	char arg[32];
+	GetCmdArg(1, arg, sizeof(arg));
+
+	int clientId = StringToInt(arg);
+	
+	SetDefaultWeapons(clientId);
+	SetWeaponsCookies(clientId);
+	return Plugin_Handled;
+}
+
+public Action SetRifle(int client, int args)
+{
+	if(args != 3)
+	{
+		ReplyToCommand(client, "Usage: sm_setrifle <clientID> <ct/t> <weapon>");
+		return Plugin_Handled;
+	}
+
+	char argClient[32];
+	GetCmdArg(1, argClient, sizeof(argClient));
+
+	int clientId = StringToInt(argClient);
+
+	char argSide[32];
+	GetCmdArg(2, argSide, sizeof(argSide));
+
+	char argWeapon[WEAPON_STRING_LENGTH];
+	GetCmdArg(3, argWeapon, sizeof(argWeapon));
+
+	if(strcmp("ct", argSide, false) == 0)
+	{
+		CTRifle[clientId] = argWeapon;
+		SetClientCookie(clientId, CTRifleCookie, CTRifle[clientId]);
+	}
+	else if(strcmp("t", argSide, false) == 0)
+	{
+		TRifle[clientId] = argWeapon;
+		SetClientCookie(clientId, TRifleCookie, TRifle[clientId]);
+	}
+	else
+	{
+		ReplyToCommand(client, "Usage: sm_setrifle <clientID> <ct/t> <weapon>");
+	}
+	
+	return Plugin_Handled;
+	
+}
+
+public Action FunMode(int client, int args)
+{
+	if(args != 3)
+	{
+		ReplyToCommand(client, "Usage: sm_funmode <rifle> <pistol> <awp>");
+		return Plugin_Handled;
+	}
+
+	char argRifle[WEAPON_STRING_LENGTH];
+	GetCmdArg(1, argRifle, sizeof(argRifle));
+
+	char argPistol[WEAPON_STRING_LENGTH];
+	GetCmdArg(2, argPistol, sizeof(argPistol));
+
+	char argAWP[WEAPON_STRING_LENGTH];
+	GetCmdArg(3, argAWP, sizeof(argAWP));
+
+	int awp = StringToInt(argAWP);
+
+	for (int i = 1; i <= MaxClients; i++)
+	{
+		if (!IsClientInGame(i))
+		{
+			continue;
+		}
+
+		CTRifle[i] = argRifle;
+		TRifle[i] = argRifle;
+		CTPistol[i] = argPistol;
+		TPistol[i] = argPistol;
+		CTAwpChance[i] = awp;
+		TAwpChance[i] = awp;
+		SetWeaponsCookies(i);
+
+	}
+
+	return Plugin_Handled;
+}
+
+
+public Action WeaponInfo(int client, int args)
+{
+	int clientId = client;
+
+	if(args > 0)
+	{
+		char arg[32];
+		GetCmdArg(1, arg, sizeof(arg));
+
+		clientId = StringToInt(arg);
+	}
+	
+	ReplyToCommand(client, "--------------------------------------------------------");
 	ReplyToCommand(client, "WEAPON INFO:");
-	ReplyToCommand(client, "CT-Rifle: %s", CTRifle[client]);
-	ReplyToCommand(client, "T-Rifle: %s", TRifle[client]);
-	ReplyToCommand(client, "CT-Pistol: %s", CTPistol[client]);
-	ReplyToCommand(client, "T-Pistol: %s", TPistol[client]);
-	ReplyToCommand(client, "CT-AWP-Chance: %d%", CTAwpChance[client]);
-	ReplyToCommand(client, "T-AWP-Chance: %d%", TAwpChance[client]);
+	ReplyToCommand(client, "CT-Rifle: %s", CTRifle[clientId]);
+	ReplyToCommand(client, "T-Rifle: %s", TRifle[clientId]);
+	ReplyToCommand(client, "CT-Pistol: %s", CTPistol[clientId]);
+	ReplyToCommand(client, "T-Pistol: %s", TPistol[clientId]);
+	ReplyToCommand(client, "CT-AWP-Chance: %d%", CTAwpChance[clientId]);
+	ReplyToCommand(client, "T-AWP-Chance: %d%", TAwpChance[clientId]);
 	ReplyToCommand(client, "--------------------------------------------------------");
 }
 
 public Action WeaponInfoCookies(int client, int args)
 {
+	int clientId = client;
+
+	if(args > 0)
+	{
+		char arg[32];
+		GetCmdArg(1, arg, sizeof(arg));
+
+		clientId = StringToInt(arg);
+	}
+
 	char ctRifle[WEAPON_STRING_LENGTH];
     char tRifle[WEAPON_STRING_LENGTH];
 	char ctPistol[WEAPON_STRING_LENGTH];
@@ -424,12 +626,12 @@ public Action WeaponInfoCookies(int client, int args)
 	char ctAwpChance[8];
 	char tAwpChance[8];
 
-	GetClientCookie(client, CTRifleCookie, ctRifle, sizeof(ctRifle));
-	GetClientCookie(client, TRifleCookie, tRifle, sizeof(tRifle));
-	GetClientCookie(client, CTPistolCookie, ctPistol, sizeof(ctPistol));
-	GetClientCookie(client, TPistolCookie, tPistol, sizeof(tPistol));
-	GetClientCookie(client, CTAwpChanceCookie, ctAwpChance, sizeof(ctAwpChance));
-	GetClientCookie(client, TAwpChanceCookie, tAwpChance, sizeof(tAwpChance));
+	GetClientCookie(clientId, CTRifleCookie, ctRifle, sizeof(ctRifle));
+	GetClientCookie(clientId, TRifleCookie, tRifle, sizeof(tRifle));
+	GetClientCookie(clientId, CTPistolCookie, ctPistol, sizeof(ctPistol));
+	GetClientCookie(clientId, TPistolCookie, tPistol, sizeof(tPistol));
+	GetClientCookie(clientId, CTAwpChanceCookie, ctAwpChance, sizeof(ctAwpChance));
+	GetClientCookie(clientId, TAwpChanceCookie, tAwpChance, sizeof(tAwpChance));
 
 	ReplyToCommand(client, "--------------------------------------------------------");
 	ReplyToCommand(client, "WEAPON INFO COOKIES:");
@@ -594,11 +796,11 @@ public void CTAwpChanceWeaponMenu(int client)
 {
 	Menu menu = new Menu(CTAWPChanceMenuHandler);
 	menu.SetTitle("CT AWP Chance Menu:");
-	menu.AddItem("0", "0%", 0 <= gcv_CTMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
-	menu.AddItem("25", "25%", 25 <= gcv_CTMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
-	menu.AddItem("50", "50%", 50 <= gcv_CTMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
-	menu.AddItem("75", "75%", 75 <= gcv_CTMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
-	menu.AddItem("100", "100%", 100 <= gcv_CTMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("0", "0%", 0 <= gcv_CTMaxAWPChance.IntValue||IsClientRoot(client)?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("25", "25%", 25 <= gcv_CTMaxAWPChance.IntValue||IsClientRoot(client)?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("50", "50%", 50 <= gcv_CTMaxAWPChance.IntValue||IsClientRoot(client)?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("75", "75%", 75 <= gcv_CTMaxAWPChance.IntValue||IsClientRoot(client)?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("100", "100%", 100 <= gcv_CTMaxAWPChance.IntValue||IsClientRoot(client)?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
 	menu.Display(client, MENU_TIME_LENGTH);
 }
 
@@ -690,11 +892,11 @@ public void TAwpChanceWeaponMenu(int client)
 {
 	Menu menu = new Menu(TAWPChanceMenuHandler);
 	menu.SetTitle("T AWP Chance Menu:");
-	menu.AddItem("0", "0%", 0 <= gcv_TMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
-	menu.AddItem("25", "25%", 25 <= gcv_TMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
-	menu.AddItem("50", "50%", 50 <= gcv_TMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
-	menu.AddItem("75", "75%", 75 <= gcv_TMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
-	menu.AddItem("100", "100%", 100 <= gcv_TMaxAWPChance.IntValue?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("0", "0%", 0 <= gcv_TMaxAWPChance.IntValue||IsClientRoot(client)?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("25", "25%", 25 <= gcv_TMaxAWPChance.IntValue||IsClientRoot(client)?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("50", "50%", 50 <= gcv_TMaxAWPChance.IntValue||IsClientRoot(client)?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("75", "75%", 75 <= gcv_TMaxAWPChance.IntValue||IsClientRoot(client)?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
+	menu.AddItem("100", "100%", 100 <= gcv_TMaxAWPChance.IntValue||IsClientRoot(client)?ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED);
 	menu.Display(client, MENU_TIME_LENGTH);
 }
 
@@ -745,13 +947,23 @@ public void WeaponAllocator(ArrayList tPlayers, ArrayList ctPlayers, Bombsite bo
 		char nades[NADE_STRING_LENGTH];
 
 		int awpChance = TAwpChance[client];
+
+		if(awpChance > gcv_TMaxAWPChance.IntValue && !IsClientRoot(client))
+		{
+			awpChance = 0;
+
+			TAwpChance[client] = awpChance;
+			SetClientCookie(client, TAwpChanceCookie, "0");
+		}
+
 		if(!isAWPGivenToT && awpChance > 0 && GetRandomInt(0, 100) <= awpChance)
 		{
 			primary = "weapon_awp";
 			isAWPGivenToT = true;
 		}
-        else {
-            primary = TRifle[client];
+        else 
+		{
+			primary = TRifle[client];
         } 
 
         secondary = TPistol[client];
@@ -770,13 +982,23 @@ public void WeaponAllocator(ArrayList tPlayers, ArrayList ctPlayers, Bombsite bo
 		char nades[NADE_STRING_LENGTH];
 
 		int awpChance = CTAwpChance[client];
+
+		if(awpChance > gcv_CTMaxAWPChance.IntValue && !IsClientRoot(client))
+		{
+			awpChance = 0;
+
+			CTAwpChance[client] = awpChance;
+			SetClientCookie(client, CTAwpChanceCookie, "0");
+		}
+
 		if(!isAWPGivenToCT && awpChance > 0 && GetRandomInt(0, 100) <= awpChance)
 		{
 			primary = "weapon_awp";
 			isAWPGivenToCT = true;
 		}
-        else {
-            primary = CTRifle[client];
+        else 
+		{
+			primary = CTRifle[client];
         } 
 
         secondary = CTPistol[client];
@@ -889,4 +1111,41 @@ public void SetNadePresets(bool isClientCT, char nades[NADE_STRING_LENGTH])
 	{
 		nades = AvailableTNades[GetRandomInt(0, TNadesCount)];
 	}
+}
+
+
+public Action Event_WeaponFire(Event event, const char[] name, bool dontBroadcast) 
+{
+	int userid = event.GetInt("userid");
+	int client = GetClientOfUserId(userid);
+	char weapon[WEAPON_STRING_LENGTH]; 
+	event.GetString("weapon", weapon, sizeof(weapon)); 
+	bool silenced = event.GetBool("silenced");
+	
+
+	if(strcmp("weapon_m4a1_silencer", weapon, false) == 0 && !silenced)
+	{
+		int primary = GetPlayerWeaponSlot(client, 0);
+		if (primary != -1)
+    	{
+        	RemovePlayerItem(client, primary);
+        	RemoveEntity(primary);
+			GivePlayerItem(client, "weapon_m4a1_silencer");
+    	}
+		return Plugin_Continue;
+	}
+
+	if(strcmp("weapon_usp_silencer", weapon, false) == 0 && !silenced)
+	{
+		int secondary = GetPlayerWeaponSlot(client, 1);
+		if (secondary != -1)
+    	{
+        	RemovePlayerItem(client, secondary);
+        	RemoveEntity(secondary);
+			GivePlayerItem(client, "weapon_usp_silencer");
+    	}
+		return Plugin_Continue;
+	}
+	
+	return Plugin_Continue;
 }
