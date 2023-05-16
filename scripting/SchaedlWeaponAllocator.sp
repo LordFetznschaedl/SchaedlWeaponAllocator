@@ -100,7 +100,7 @@ public void OnPluginStart()
 		LateLoad();
 	}
 
-	HookEvent("weapon_fire", Event_WeaponFire);
+	//HookEvent("weapon_fire", Event_WeaponFire);
 
 	RegAdminCmd("sm_weaponinfo", WeaponInfo, 98, "Prints to chat the selected weapons.");
 	RegAdminCmd("sm_weaponinfocookies", WeaponInfoCookies, 98,  "Prints to chat the selected weapons saved in the cookies.");
@@ -150,6 +150,7 @@ public void LateLoad()
 			}
 
 			OnClientConnected(i);
+			OnClientPutInServer(i);
 
 			if (!AreClientCookiesCached(i))
 			{
@@ -386,6 +387,11 @@ public void SetWeaponsCookies(int client)
 public void OnClientConnected(int client)
 {
 	SetDefaultWeapons(client);
+}
+
+public void OnClientPutInServer(int client)
+{
+    SDKHook(client, SDKHook_OnTakeDamage, SDKEvent_OnTakeDamage);
 }
 
 public void OnClientCookiesCached(int client) 
@@ -1149,3 +1155,31 @@ public Action Event_WeaponFire(Event event, const char[] name, bool dontBroadcas
 	
 	return Plugin_Continue;
 }
+
+public Action SDKEvent_OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3])
+{
+    if (attacker < 1 || attacker > MaxClients || attacker == victim || inflictor < 1)
+    {
+        return Plugin_Continue;
+    }
+    
+    if (GetClientTeam(attacker) != GetClientTeam(victim))
+    {
+        return Plugin_Continue;
+    }
+    
+    if (inflictor > MaxClients)
+    {
+        char inflictorClass[64];
+        GetEdictClassname(inflictor, inflictorClass, sizeof(inflictorClass));
+        
+        if (StrEqual(inflictorClass, "planted_c4") || StrEqual(inflictorClass, "inferno") || StrEqual(inflictorClass, "hegrenade_projectile"))
+        {
+            return Plugin_Continue;
+        }
+    }
+    
+    damage = 0.0;
+    damagetype |= DMG_PREVENT_PHYSICS_FORCE;
+    return Plugin_Changed;
+} 
